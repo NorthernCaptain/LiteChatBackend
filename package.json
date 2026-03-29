@@ -1,0 +1,47 @@
+{
+    "name": "litechat-backend",
+    "version": "1.0.0",
+    "description": "LiteChat family chat backend — standalone or LinesBackend plugin",
+    "main": "index.js",
+    "author": "NorthernCaptain",
+    "license": "UNLICENSED",
+    "private": true,
+    "engines": {
+        "node": ">=22.0.0"
+    },
+    "scripts": {
+        "start": "node app.js",
+        "dev": "env-cmd -f .env.development node app.js",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage",
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
+    },
+    "dependencies": {
+        "express": "^4.22.1",
+        "multer": "^1.4.5-lts.1",
+        "mysql2": "^3.20.0",
+        "sharp": "^0.34.5"
+    },
+    "devDependencies": {
+        "env-cmd": "^10.1.0",
+        "jest": "^29.7.0",
+        "prettier": "^3.4.2"
+    },
+    "jest": {
+        "testEnvironment": "node",
+        "testMatch": [
+            "**/*.test.js"
+        ],
+        "collectCoverageFrom": [
+            "db/**/*.js",
+            "services/**/*.js",
+            "routes/**/*.js",
+            "middleware/**/*.js",
+            "!**/*.test.js"
+        ],
+        "coverageDirectory": "coverage",
+        "verbose": true
+    }
+}

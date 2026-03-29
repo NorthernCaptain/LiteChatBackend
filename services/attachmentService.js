@@ -13,12 +13,12 @@ const { LIMITS, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES } = require("./constants")
 const { dbInsertAttachment, dbGetAttachment } = require("../db/attachments")
 const { dbIsUserMember } = require("../db/conversations")
 
-const STORAGE_BASE =
-    process.env.LC_STORAGE_PATH ||
-    path.join(__dirname, "..", "storage")
-const ORIGINALS_DIR = path.join(STORAGE_BASE, "originals")
-const THUMBNAILS_DIR = path.join(STORAGE_BASE, "thumbnails")
-const AVATARS_DIR = path.join(STORAGE_BASE, "avatars")
+const STORAGE_BASE = path.resolve(
+    process.env.LC_STORAGE_PATH || path.join(__dirname, "..", "storage")
+)
+const ORIGINALS_DIR = path.resolve(STORAGE_BASE, "originals")
+const THUMBNAILS_DIR = path.resolve(STORAGE_BASE, "thumbnails")
+const AVATARS_DIR = path.resolve(STORAGE_BASE, "avatars")
 
 // Ensure storage directories exist
 for (const dir of [ORIGINALS_DIR, THUMBNAILS_DIR, AVATARS_DIR]) {

@@ -230,6 +230,26 @@ Auth middleware sets `req.user.user_id` (INT, references LinesBackend authdb use
 
 ---
 
+### GET /users/me
+
+Get the authenticated user's full profile.
+
+**Response (200):**
+```json
+{
+    "userId": 10,
+    "email": "leo@example.com",
+    "name": "Leo",
+    "avatar": "a1b2c3.jpg",
+    "chatAccess": 1
+}
+```
+
+**Errors:**
+- 404: User not found in authdb
+
+---
+
 ### GET /users
 
 List all users with chat access. Used by client to show contact list and resolve user names/avatars.

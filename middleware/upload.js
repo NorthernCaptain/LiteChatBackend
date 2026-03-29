@@ -14,10 +14,10 @@ const {
     VIDEO_MIME_TYPES,
 } = require("../services/constants")
 
-const STORAGE_BASE =
-    process.env.LC_STORAGE_PATH ||
-    path.join(__dirname, "..", "storage")
-const ORIGINALS_DIR = path.join(STORAGE_BASE, "originals")
+const STORAGE_BASE = path.resolve(
+    process.env.LC_STORAGE_PATH || path.join(__dirname, "..", "storage")
+)
+const ORIGINALS_DIR = path.resolve(STORAGE_BASE, "originals")
 
 fs.mkdirSync(ORIGINALS_DIR, { recursive: true })
 

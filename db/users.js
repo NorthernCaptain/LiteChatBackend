@@ -25,4 +25,20 @@ const dbGetUserAvatar = async (userId) => {
     return rows.length ? rows[0].avatar : null
 }
 
-module.exports = { dbGetChatUsers, dbGetUserAvatar }
+const dbGetUser = async (userId) => {
+    const [rows] = await authPool.query(
+        "SELECT user_id, email, name, avatar, chat_access FROM users WHERE user_id = ?",
+        [userId]
+    )
+    if (!rows.length) return null
+    const r = rows[0]
+    return {
+        userId: r.user_id,
+        email: r.email,
+        name: r.name,
+        avatar: r.avatar || null,
+        chatAccess: r.chat_access,
+    }
+}
+
+module.exports = { dbGetChatUsers, dbGetUser, dbGetUserAvatar }

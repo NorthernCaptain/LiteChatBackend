@@ -11,7 +11,7 @@ const { logger } = require("../utils/logger")
 const { upload } = require("../middleware/upload")
 const { LIMITS, SAFE_MIME_TYPES } = require("../services/constants")
 
-const { dbGetChatUsers, dbGetUserAvatar } = require("../db/users")
+const { dbGetChatUsers, dbGetUser, dbGetUserAvatar } = require("../db/users")
 const {
     createConversation,
     getConversation,
@@ -49,6 +49,17 @@ function router(app) {
     r.use(app.oauth.authorise())
 
     // --- Users ---
+
+    r.get(
+        "/users/me",
+        asyncHandler(async (req, res) => {
+            const user = await dbGetUser(req.user.user_id)
+            if (!user) {
+                return res.status(404).json({ error: "User not found" })
+            }
+            res.json(user)
+        })
+    )
 
     r.get(
         "/users",

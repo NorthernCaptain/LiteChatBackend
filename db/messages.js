@@ -147,6 +147,14 @@ const dbSendMessageTx = async (conversationId, senderId, text, referenceMessageI
     }
 }
 
+async function dbCheckPendingEvent(messageId, userId) {
+    const [rows] = await pool.query(
+        "SELECT 1 FROM pending_events WHERE message_id = ? AND user_id = ? LIMIT 1",
+        [messageId, userId]
+    )
+    return rows.length > 0
+}
+
 module.exports = {
     dbInsertMessage,
     dbGetMessage,
@@ -157,4 +165,5 @@ module.exports = {
     dbFetchPendingEvents,
     dbGetMessagesByIds,
     dbSendMessageTx,
+    dbCheckPendingEvent,
 }

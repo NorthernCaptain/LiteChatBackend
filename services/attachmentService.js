@@ -10,8 +10,10 @@ const { execFile } = require("child_process")
 const sharp = require("sharp")
 const { logger } = require("../utils/logger")
 const { LIMITS, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES } = require("./constants")
+const crypto = require("crypto")
 const { dbInsertAttachment, dbGetAttachment } = require("../db/attachments")
 const { dbIsUserMember } = require("../db/conversations")
+const { dbGetUserAvatar, dbSetUserAvatar } = require("../db/users")
 
 const STORAGE_BASE = path.resolve(
     process.env.LC_STORAGE_PATH || path.join(__dirname, "..", "storage")
@@ -179,12 +181,59 @@ function getAvatarPath(filename) {
     return safePath(AVATARS_DIR, filename)
 }
 
+async function saveAvatar(file, userId) {
+    // Delete old avatar file if exists
+    const oldAvatar = await dbGetUserAvatar(userId)
+    if (oldAvatar) {
+        try {
+            fs.unlinkSync(safePath(AVATARS_DIR, oldAvatar))
+        } catch {
+            // old file may already be missing
+        }
+    }
+
+    // Process and save new avatar
+    const ext = ".jpg"
+    const avatarFilename = crypto.randomUUID() + ext
+    const avatarPath = path.join(AVATARS_DIR, avatarFilename)
+    const sourcePath = path.join(ORIGINALS_DIR, file.filename)
+
+    await sharp(sourcePath)
+        .resize(256, 256, { fit: "cover" })
+        .jpeg({ quality: LIMITS.THUMBNAIL_QUALITY })
+        .toFile(avatarPath)
+
+    // Remove the multer temp file from originals/
+    try {
+        fs.unlinkSync(sourcePath)
+    } catch {
+        // ignore
+    }
+
+    await dbSetUserAvatar(userId, avatarFilename)
+    return avatarFilename
+}
+
+async function deleteAvatar(userId) {
+    const oldAvatar = await dbGetUserAvatar(userId)
+    if (oldAvatar) {
+        try {
+            fs.unlinkSync(safePath(AVATARS_DIR, oldAvatar))
+        } catch {
+            // file may already be missing
+        }
+    }
+    await dbSetUserAvatar(userId, null)
+}
+
 module.exports = {
     uploadAttachment,
     getAttachmentForDownload,
     getOriginalPath,
     getThumbnailPath,
     getAvatarPath,
+    saveAvatar,
+    deleteAvatar,
     ORIGINALS_DIR,
     THUMBNAILS_DIR,
     AVATARS_DIR,

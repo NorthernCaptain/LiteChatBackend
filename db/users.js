@@ -41,4 +41,11 @@ const dbGetUser = async (userId) => {
     }
 }
 
-module.exports = { dbGetChatUsers, dbGetUser, dbGetUserAvatar }
+const dbSetUserAvatar = async (userId, avatarFilename) => {
+    await authPool.query("UPDATE users SET avatar = ? WHERE user_id = ?", [
+        avatarFilename,
+        userId,
+    ])
+}
+
+module.exports = { dbGetChatUsers, dbGetUser, dbGetUserAvatar, dbSetUserAvatar }

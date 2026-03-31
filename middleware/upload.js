@@ -31,14 +31,58 @@ const ALLOWED_MIME_TYPES = new Set([
     "application/zip",
     "application/x-zip-compressed",
     "text/plain",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ])
 
 // Allowed extensions (lowercase, with dot)
 const ALLOWED_EXTENSIONS = new Set([
-    ".jpg", ".jpeg", ".png", ".gif", ".webp",
-    ".mp4", ".mov", ".webm", ".avi",
-    ".pdf", ".mp3", ".ogg", ".wav",
-    ".zip", ".txt",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".mp4",
+    ".mov",
+    ".webm",
+    ".avi",
+    ".pdf",
+    ".mp3",
+    ".ogg",
+    ".wav",
+    ".zip",
+    ".txt",
+    ".doc",
+    ".docx",
+    ".apk",
+    ".exe",
+    ".tar",
+    ".gz",
+    ".rar",
+    ".7z",
+    ".bz2",
+    ".xz",
+    ".deb",
+    ".rpm",
+    ".pkg",
+    ".msi",
+    ".jar",
+    ".war",
+    ".ear",
+    ".sar",
+    ".ipa",
+    ".app",
+    ".dmg",
+    ".xlsx",
+    ".xls",
+    ".csv",
+    ".ppt",
+    ".pptx",
 ])
 
 const storage = multer.diskStorage({
@@ -54,7 +98,10 @@ const storage = multer.diskStorage({
 
 function fileFilter(req, file, cb) {
     const ext = path.extname(file.originalname).toLowerCase()
-    if (!ALLOWED_MIME_TYPES.has(file.mimetype) || !ALLOWED_EXTENSIONS.has(ext)) {
+    if (
+        !ALLOWED_MIME_TYPES.has(file.mimetype) ||
+        !ALLOWED_EXTENSIONS.has(ext)
+    ) {
         return cb(new Error("File type not allowed"))
     }
     cb(null, true)

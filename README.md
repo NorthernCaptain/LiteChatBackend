@@ -20,7 +20,8 @@ LiteChatBackend/
 │   ├── conversations.js        # Conversation CRUD queries
 │   ├── messages.js             # Message + pending event queries
 │   ├── attachments.js          # Attachment metadata queries
-│   └── reactions.js            # Reaction queries
+│   ├── reactions.js            # Reaction queries
+│   └── fcmTokens.js            # FCM token CRUD
 ├── routes/
 │   └── litechat.js             # All API routes (single router, receives app)
 ├── services/
@@ -29,6 +30,7 @@ LiteChatBackend/
 │   ├── attachmentService.js    # Upload, download, thumbnail generation
 │   ├── reactionService.js
 │   ├── clusterBroker.js        # Master-side IPC broker (lc: prefix)
+│   ├── fcmService.js           # Firebase Cloud Messaging (push notifications)
 │   └── constants.js
 ├── middleware/
 │   └── upload.js               # Multer config
@@ -39,7 +41,8 @@ LiteChatBackend/
 │   ├── 004_attachments.sql
 │   ├── 005_reactions.sql
 │   ├── 006_pending_events.sql
-│   └── 007_authdb_chat_access.sql
+│   ├── 007_authdb_chat_access.sql
+│   └── 008-fcm-tokens.sql
 └── storage/                    # gitignored
     ├── originals/
     ├── thumbnails/
@@ -126,6 +129,19 @@ CREATE TABLE pending_events (
     KEY idx_user_pending (user_id, id)
 );
 ```
+### fcm_tokens
+```sql
+CREATE TABLE fcm_tokens (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    token VARCHAR(512) NOT NULL,
+    created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_token (token),
+    KEY idx_user (user_id)
+);
+```
+
 Extensible: new event types can be added to the ENUM and a corresponding `*_id` column added. The `type` column tells the client which payload to expect in the poll response.
 
 ## Data Models
@@ -268,6 +284,34 @@ List all users with chat access. Used by client to show contact list and resolve
 - Queries `authdb.users WHERE chat_access = 1`
 - Returns all chat-enabled users (family app, small user base)
 - `avatar` is null if user hasn't set one
+
+---
+
+### POST /users/me/avatar
+
+Upload a new avatar or remove the existing one.
+
+**Request (upload):** `multipart/form-data`
+- Field name: `file` — image file to use as avatar
+
+**Request (remove):** Empty POST (no file field)
+
+**Behavior:**
+- Upload: image is resized to 256x256 (cover crop), saved as JPEG in `storage/avatars/`. Old avatar file is deleted.
+- Remove: avatar file is deleted from disk, avatar set to null in DB.
+
+**Response (200):**
+```json
+{
+    "avatar": "a1b2c3d4-e5f6.jpg"
+}
+```
+or on removal:
+```json
+{
+    "avatar": null
+}
+```
 
 ---
 
@@ -667,6 +711,56 @@ Remove an emoji reaction from a message.
 
 ---
 
+### POST /users/me/fcmtoken
+
+Register an FCM push notification token for the authenticated user.
+
+**Request body:**
+```json
+{
+    "token": "fcm_device_token_string"
+}
+```
+
+**Behavior:**
+- Upserts by token (if token already exists, updates the user_id and timestamp)
+- A user can have multiple tokens (multiple devices)
+
+**Response (200):**
+```json
+{
+    "success": true
+}
+```
+
+**Errors:**
+- 400: Token missing
+
+---
+
+### DELETE /users/me/fcmtoken
+
+Unregister an FCM token (on logout).
+
+**Request body:**
+```json
+{
+    "token": "fcm_device_token_string"
+}
+```
+
+**Response (200):**
+```json
+{
+    "success": true
+}
+```
+
+**Errors:**
+- 400: Token missing
+
+---
+
 ### POST /poll
 
 Long-poll for new messages/events across ALL user's conversations.
@@ -771,6 +865,15 @@ NavalClash polls are keyed by session ID (one opponent). LiteChat polls are keye
 8. Worker receives WAKE, fetches pending_events from DB, responds to held HTTP request
 9. If 15s timer fires first: responds with `{ messages: [] }`, sends UNSUBSCRIBE
 
+## Push Notifications (FCM)
+
+When a message is sent, the server notifies recipients via long-polling. After a 1.5s grace period, it checks if each recipient's pending_event is still in the database (meaning polling didn't pick it up). If so, it sends an FCM notification via Firebase Admin SDK.
+
+- FCM is disabled if `LC_FCM_SERVICE_ACCOUNT_PATH` is not set
+- Notifications are sent only for new messages, not reactions
+- Invalid/expired FCM tokens are automatically cleaned up on send failure
+- Each user can have multiple tokens (multiple devices)
+
 ## Attachment Handling
 
 - **Upload**: multer saves to `storage/originals/` with `crypto.randomUUID() + ext` filename
@@ -786,7 +889,8 @@ NavalClash polls are keyed by session ID (one opponent). LiteChat polls are keye
     "express": "^4.22.1",
     "mysql2": "^3.16.0",
     "multer": "^1.4.5-lts.1",
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.0",
+    "firebase-admin": "^13.x"
 }
 ```
 
@@ -807,7 +911,9 @@ ALTER TABLE users ADD COLUMN avatar VARCHAR(255) DEFAULT NULL;
 3. Run `sql/007_authdb_chat_access.sql` against the LinesBackend authdb
 4. Set `chat_access = 1` for users who should have chat access
 5. `npm install` in this directory
-6. Start LinesBackend - module loads at `/litechat/api/v1`
+6. Run `sql/008-fcm-tokens.sql` against the litechat database
+7. (Optional) For push notifications: set `LC_FCM_SERVICE_ACCOUNT_PATH` to the Firebase service account JSON file path
+8. Start LinesBackend - module loads at `/litechat/api/v1`
 
 ### Environment Variables
 
@@ -818,5 +924,6 @@ ALTER TABLE users ADD COLUMN avatar VARCHAR(255) DEFAULT NULL;
 | `LC_DB_USER` | `db_user` | Database user |
 | `LC_DB_PASSWORD` | `db_password` | Database password |
 | `LC_STORAGE_PATH` | `./storage` | Base path for file storage |
+| `LC_FCM_SERVICE_ACCOUNT_PATH` | *(disabled)* | Path to Firebase service account JSON for push notifications |
 
 Auth database connection uses LinesBackend's `db_auth_*` env vars.

@@ -29,8 +29,12 @@ const {
     getOriginalPath,
     getThumbnailPath,
     getAvatarPath,
+    saveAvatar,
+    deleteAvatar,
 } = require("../services/attachmentService")
 const { addReaction, removeReaction } = require("../services/reactionService")
+const { initFcm } = require("../services/fcmService")
+const { dbSaveFcmToken, dbDeleteFcmToken } = require("../db/fcmTokens")
 
 function asyncHandler(fn) {
     return (req, res, next) => {
@@ -43,6 +47,9 @@ function sanitizeFilenameForHeader(filename) {
 }
 
 function router(app) {
+    // Initialize FCM in worker processes only (router() is not called in master)
+    initFcm()
+
     const r = express.Router()
     r.use(express.json())
     r.use(requestLogger)
@@ -58,6 +65,21 @@ function router(app) {
                 return res.status(404).json({ error: "User not found" })
             }
             res.json(user)
+        })
+    )
+
+    r.post(
+        "/users/me/avatar",
+        upload.single("file"),
+        asyncHandler(async (req, res) => {
+            const userId = req.user.user_id
+            if (req.file) {
+                const avatar = await saveAvatar(req.file, userId)
+                res.json({ avatar })
+            } else {
+                await deleteAvatar(userId)
+                res.json({ avatar: null })
+            }
         })
     )
 
@@ -82,6 +104,29 @@ function router(app) {
                 return res.status(404).json({ error: "Avatar file not found" })
             }
             res.sendFile(avatarPath)
+        })
+    )
+
+    // --- FCM Token ---
+
+    r.post(
+        "/users/me/fcmtoken",
+        asyncHandler(async (req, res) => {
+            const userId = req.user.user_id
+            const { token } = req.body
+            if (!token) return res.status(400).json({ error: "Token required" })
+            await dbSaveFcmToken(userId, token)
+            res.json({ success: true })
+        })
+    )
+
+    r.delete(
+        "/users/me/fcmtoken",
+        asyncHandler(async (req, res) => {
+            const { token } = req.body
+            if (!token) return res.status(400).json({ error: "Token required" })
+            await dbDeleteFcmToken(token)
+            res.json({ success: true })
         })
     )
 

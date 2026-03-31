@@ -17,7 +17,10 @@ const {
     dbFetchPendingEvents,
     dbGetMessagesByIds,
     dbSendMessageTx,
+    dbCheckPendingEvent,
 } = require("../db/messages")
+const fcmService = require("./fcmService")
+const { dbGetUser } = require("../db/users")
 const {
     dbGetConversationMembers,
     dbIsUserMember,
@@ -314,9 +317,30 @@ async function sendMessageToConversation(
         recipientIds
     )
 
-    // Notify each recipient via IPC (outside transaction)
+    // Notify each recipient via polling (outside transaction)
     for (const uid of recipientIds) {
         publishToUser(uid)
+    }
+
+    // After a delay, send FCM to recipients who didn't pick up via poll
+    const senderInfo = await dbGetUser(senderId)
+    const senderName = (senderInfo && senderInfo.name) || "New message"
+    const bodyText = text ? text.substring(0, 200) : "Attachment"
+    for (const uid of recipientIds) {
+        setTimeout(async () => {
+            try {
+                const pending = await dbCheckPendingEvent(messageId, uid)
+                if (pending) {
+                    await fcmService.sendNotification(uid, {
+                        title: senderName,
+                        body: bodyText,
+                        conversationId: String(conversationId),
+                    })
+                }
+            } catch (err) {
+                logger.error({}, "FCM notification error for user %d: %s", uid, err.message)
+            }
+        }, 1500)
     }
 
     // Return the full message

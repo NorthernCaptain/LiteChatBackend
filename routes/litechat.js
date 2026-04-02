@@ -23,6 +23,8 @@ const {
     getConversationMessages,
     pollForEvents,
     broadcastTyping,
+    acknowledgeDelivery,
+    acknowledgeRead,
 } = require("../services/messageService")
 const {
     uploadAttachment,
@@ -328,6 +330,34 @@ function router(app) {
 
             const result = await removeReaction(messageId, userId, emoji)
             res.json(result)
+        })
+    )
+
+    // --- Delivery / Read ---
+
+    r.post(
+        "/conversations/:id/ack",
+        asyncHandler(async (req, res) => {
+            const userId = req.user.user_id
+            const conversationId = req.params.id
+            await requireMembership(conversationId, userId)
+            const { messageId } = req.body
+            if (!messageId) return res.status(400).json({ error: "messageId required" })
+            await acknowledgeDelivery(conversationId, userId, messageId)
+            res.json({ success: true })
+        })
+    )
+
+    r.post(
+        "/conversations/:id/read",
+        asyncHandler(async (req, res) => {
+            const userId = req.user.user_id
+            const conversationId = req.params.id
+            await requireMembership(conversationId, userId)
+            const { messageId } = req.body
+            if (!messageId) return res.status(400).json({ error: "messageId required" })
+            await acknowledgeRead(conversationId, userId, messageId)
+            res.json({ success: true })
         })
     )
 

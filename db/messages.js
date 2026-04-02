@@ -179,6 +179,49 @@ async function dbCheckPendingEvent(messageId, userId) {
     return rows.length > 0
 }
 
+async function dbInsertEventsWithMeta(type, conversationId, meta, recipientIds) {
+    if (recipientIds.length === 0) return
+    const metaJson = JSON.stringify(meta)
+    const values = recipientIds.map((uid) => [uid, type, conversationId, metaJson])
+    await pool.query(
+        "INSERT INTO pending_events (user_id, type, conversation_id, meta) VALUES ?",
+        [values]
+    )
+}
+
+async function dbMarkDelivered(conversationId, userId, upToMessageId) {
+    // Get distinct senders of newly delivered messages
+    const [rows] = await pool.query(
+        `SELECT DISTINCT sender_id FROM messages
+         WHERE conversation_id = ? AND id <= ? AND sender_id != ? AND delivered = 0`,
+        [conversationId, upToMessageId, userId]
+    )
+    if (rows.length === 0) return []
+
+    await pool.query(
+        `UPDATE messages SET delivered = 1
+         WHERE conversation_id = ? AND id <= ? AND sender_id != ? AND delivered = 0`,
+        [conversationId, upToMessageId, userId]
+    )
+    return rows.map((r) => r.sender_id)
+}
+
+async function dbMarkRead(conversationId, userId, upToMessageId) {
+    const [rows] = await pool.query(
+        `SELECT DISTINCT sender_id FROM messages
+         WHERE conversation_id = ? AND id <= ? AND sender_id != ? AND read_at = 0`,
+        [conversationId, upToMessageId, userId]
+    )
+    if (rows.length === 0) return []
+
+    await pool.query(
+        `UPDATE messages SET read_at = 1
+         WHERE conversation_id = ? AND id <= ? AND sender_id != ? AND read_at = 0`,
+        [conversationId, upToMessageId, userId]
+    )
+    return rows.map((r) => r.sender_id)
+}
+
 module.exports = {
     dbInsertMessage,
     dbGetMessage,
@@ -193,4 +236,7 @@ module.exports = {
     dbDeleteTypingEvents,
     dbDeleteTypingEventsForUser,
     dbInsertTypingEvents,
+    dbInsertEventsWithMeta,
+    dbMarkDelivered,
+    dbMarkRead,
 }

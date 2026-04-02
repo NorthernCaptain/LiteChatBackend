@@ -43,7 +43,8 @@ LiteChatBackend/
 │   ├── 006_pending_events.sql
 │   ├── 007_authdb_chat_access.sql
 │   ├── 008-fcm-tokens.sql
-│   └── 009-typing-events.sql
+│   ├── 009-typing-events.sql
+│   └── 010-delivery-status.sql
 └── storage/                    # gitignored
     ├── originals/
     ├── thumbnails/
@@ -83,6 +84,8 @@ CREATE TABLE messages (
     sender_id INT UNSIGNED NOT NULL,
     text TEXT DEFAULT NULL,
     reference_message_id BIGINT UNSIGNED DEFAULT NULL,
+    delivered TINYINT NOT NULL DEFAULT 0,
+    read_at TINYINT NOT NULL DEFAULT 0,
     created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
     KEY idx_conv (conversation_id, id),
     KEY idx_sender (sender_id)
@@ -122,7 +125,7 @@ CREATE TABLE reactions (
 CREATE TABLE pending_events (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
-    type ENUM('message','reaction','typing') NOT NULL DEFAULT 'message',
+    type ENUM('message','reaction','typing','delivery','read') NOT NULL DEFAULT 'message',
     conversation_id BIGINT UNSIGNED NOT NULL,
     message_id BIGINT UNSIGNED DEFAULT NULL,
     reaction_id BIGINT UNSIGNED DEFAULT NULL,
@@ -192,7 +195,9 @@ Requires new columns on authdb `users` table:
     "referenceMessageId": "145",// string | null (reply-to)
     "attachments": [Attachment],// array (empty if none)
     "reactions": [ReactionGroup],// array (empty if none)
-    "createdAt": "2026-03-28T14:35:00.000Z"
+    "createdAt": "2026-03-28T14:35:00.000Z",
+    "delivered": false,         // boolean — at least one recipient received it
+    "readAt": false             // boolean — at least one recipient opened the chat
 }
 ```
 
@@ -231,14 +236,17 @@ Note: `serverFilename` and `thumbnailFilename` are internal, not exposed to clie
 ```
 {
     "pendingId": "26",          // BIGINT as string - pending_events.id
-    "type": "message",          // "message" | "reaction" | "typing"
+    "type": "message",          // "message" | "reaction" | "typing" | "delivery" | "read"
     "conversationId": "1",
     "message": Message,         // full Message object (for type "message")
     "reaction": Reaction,       // Reaction object (for type "reaction", includes messageId)
     "meta": Object              // arbitrary JSON (for type "typing" and future types)
 }
 ```
-Only the field matching `type` is present. The `meta` field carries extensible JSON metadata — for typing events: `{ "userId": 10, "name": "Leo", "active": true }`.
+Only the field matching `type` is present. The `meta` field carries extensible JSON metadata:
+- typing: `{ "userId": 10, "name": "Leo", "active": true }`
+- delivery: `{ "messageId": "155" }`
+- read: `{ "messageId": "155" }`
 
 ---
 
@@ -764,6 +772,70 @@ Unregister an FCM token (on logout).
 
 ---
 
+### POST /conversations/:id/ack
+
+Acknowledge delivery of messages (marks them as delivered).
+
+**Path parameters:**
+- `id` (string) - Conversation ID
+
+**Request body:**
+```json
+{
+    "messageId": "155"
+}
+```
+
+**Behavior:**
+- Marks all messages in this conversation up to `messageId` as `delivered = 1` (where `sender_id != current user` and `delivered = 0`)
+- Inserts `delivery` pending_events for each affected sender with meta `{ "messageId": "155" }`
+- Wakes senders' polls so they see the delivery indicator
+
+**Response (200):**
+```json
+{
+    "success": true
+}
+```
+
+**Errors:**
+- 400: messageId missing
+- 403: User not a member
+
+---
+
+### POST /conversations/:id/read
+
+Send a read receipt for messages (marks them as read).
+
+**Path parameters:**
+- `id` (string) - Conversation ID
+
+**Request body:**
+```json
+{
+    "messageId": "155"
+}
+```
+
+**Behavior:**
+- Marks all messages up to `messageId` as `read_at = 1` (where `sender_id != current user` and `read_at = 0`)
+- Inserts `read` pending_events for each affected sender with meta `{ "messageId": "155" }`
+- Wakes senders' polls so they see the read indicator
+
+**Response (200):**
+```json
+{
+    "success": true
+}
+```
+
+**Errors:**
+- 400: messageId missing
+- 403: User not a member
+
+---
+
 ### POST /conversations/:id/typing
 
 Send a typing indicator to other members of a conversation.
@@ -949,7 +1021,7 @@ ALTER TABLE users ADD COLUMN avatar VARCHAR(255) DEFAULT NULL;
 3. Run `sql/007_authdb_chat_access.sql` against the LinesBackend authdb
 4. Set `chat_access = 1` for users who should have chat access
 5. `npm install` in this directory
-6. Run `sql/008-fcm-tokens.sql` and `sql/009-typing-events.sql` against the litechat database
+6. Run `sql/008-fcm-tokens.sql`, `sql/009-typing-events.sql`, and `sql/010-delivery-status.sql` against the litechat database
 7. (Optional) For push notifications: set `LC_FCM_SERVICE_ACCOUNT_PATH` to the Firebase service account JSON file path
 8. Start LinesBackend - module loads at `/litechat/api/v1`
 

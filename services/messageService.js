@@ -21,6 +21,9 @@ const {
     dbDeleteTypingEvents,
     dbDeleteTypingEventsForUser,
     dbInsertTypingEvents,
+    dbInsertEventsWithMeta,
+    dbMarkDelivered,
+    dbMarkRead,
 } = require("../db/messages")
 const fcmService = require("./fcmService")
 const { dbGetUser } = require("../db/users")
@@ -114,6 +117,8 @@ function formatMessage(msg, attachments, reactions) {
         attachments: attachments.map(formatAttachment),
         reactions: groupReactions(reactions),
         createdAt: msg.created_at,
+        delivered: msg.delivered === 1,
+        readAt: msg.read_at === 1,
     }
 }
 
@@ -226,7 +231,7 @@ async function buildEventResponse(userId) {
         } else if (row.type === "reaction" && row.reaction_id) {
             event.reaction =
                 reactionMap.get(row.reaction_id.toString()) || null
-        } else if (row.type === "typing" && row.meta) {
+        } else if (row.meta) {
             try {
                 event.meta = typeof row.meta === "string" ? JSON.parse(row.meta) : row.meta
             } catch (_) {
@@ -416,6 +421,28 @@ function getPendingPollCount() {
     return pendingPolls.size
 }
 
+async function acknowledgeDelivery(conversationId, userId, upToMessageId) {
+    const senderIds = await dbMarkDelivered(conversationId, userId, upToMessageId)
+    if (senderIds.length === 0) return
+
+    const meta = { messageId: upToMessageId.toString() }
+    for (const senderId of senderIds) {
+        await dbInsertEventsWithMeta("delivery", conversationId, meta, [senderId])
+        publishToUser(senderId)
+    }
+}
+
+async function acknowledgeRead(conversationId, userId, upToMessageId) {
+    const senderIds = await dbMarkRead(conversationId, userId, upToMessageId)
+    if (senderIds.length === 0) return
+
+    const meta = { messageId: upToMessageId.toString() }
+    for (const senderId of senderIds) {
+        await dbInsertEventsWithMeta("read", conversationId, meta, [senderId])
+        publishToUser(senderId)
+    }
+}
+
 async function broadcastTyping(conversationId, userId, userName, isTyping) {
     const members = await dbGetConversationMembers(conversationId)
     const recipientIds = members
@@ -455,4 +482,6 @@ module.exports = {
     handleWake,
     handleCancel,
     broadcastTyping,
+    acknowledgeDelivery,
+    acknowledgeRead,
 }

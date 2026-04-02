@@ -365,6 +365,20 @@ async function cmdReact(messageId, emoji) {
     )
 }
 
+async function cmdAck(convId, messageId) {
+    await api("POST", `/conversations/${convId}/ack`, { messageId })
+    console.log(
+        `${C.green}  Delivery ack sent for conversation #${convId} up to msg #${messageId}${C.reset}`
+    )
+}
+
+async function cmdRead(convId, messageId) {
+    await api("POST", `/conversations/${convId}/read`, { messageId })
+    console.log(
+        `${C.green}  Read receipt sent for conversation #${convId} up to msg #${messageId}${C.reset}`
+    )
+}
+
 async function cmdTyping(convId, onOff) {
     const typing = onOff !== "off"
     await api("POST", `/conversations/${convId}/typing`, { typing })
@@ -386,6 +400,8 @@ ${C.bold}Commands:${C.reset}
   /upload <filepath>              Upload file, get attachment ID
   /sendfile <convId> <filepath>   Upload + send in one step
   /react <msgId> <emoji>          Add reaction to a message
+  /ack <convId> <msgId>            Send delivery acknowledgment
+  /read <convId> <msgId>           Send read receipt
   /type <convId> [on|off]         Send typing indicator (default: on)
   /help                           Show this help
   /quit                           Exit
@@ -514,6 +530,32 @@ async function handleCommand(line) {
                 break
             }
 
+            case "ack": {
+                const convId = parts[1]
+                const msgId = parts[2]
+                if (!convId || !msgId) {
+                    console.log(
+                        `${C.red}  Usage: /ack <convId> <msgId>${C.reset}`
+                    )
+                    break
+                }
+                await cmdAck(convId, msgId)
+                break
+            }
+
+            case "read": {
+                const convId = parts[1]
+                const msgId = parts[2]
+                if (!convId || !msgId) {
+                    console.log(
+                        `${C.red}  Usage: /read <convId> <msgId>${C.reset}`
+                    )
+                    break
+                }
+                await cmdRead(convId, msgId)
+                break
+            }
+
             case "type":
             case "typing": {
                 const convId = parts[1]
@@ -566,12 +608,20 @@ function displayEvent(evt) {
             text += (text ? " " : "") + files
         }
         printAbove(
-            `${C.green}\u2190 [conv:${convId}] ${name}: ${text}${C.reset}`
+            `${C.green}\u2190 [${convId}:${m.id}] ${name}: ${text}${C.reset}`
         )
     } else if (evt.type === "reaction" && evt.reaction) {
         const r = evt.reaction
         printAbove(
             `${C.yellow}\u2190 [conv:${convId}] ${userName(r.userId)} reacted ${r.emoji} on msg #${r.messageId}${C.reset}`
+        )
+    } else if (evt.type === "delivery" && evt.meta) {
+        printAbove(
+            `${C.blue}\u2190 [conv:${convId}] \u2713 delivered up to msg #${evt.meta.messageId}${C.reset}`
+        )
+    } else if (evt.type === "read" && evt.meta) {
+        printAbove(
+            `${C.blue}\u2190 [conv:${convId}] \u2713\u2713 read up to msg #${evt.meta.messageId}${C.reset}`
         )
     } else if (evt.type === "typing" && evt.meta) {
         const name = evt.meta.name || `user#${evt.meta.userId}`
@@ -601,6 +651,12 @@ async function pollLoop() {
                     displayEvent(evt)
                     if (BigInt(evt.pendingId) > BigInt(lastPendingId)) {
                         lastPendingId = evt.pendingId
+                    }
+                    // Auto-send delivery ack for messages
+                    if (evt.type === "message" && evt.message) {
+                        api("POST", `/conversations/${evt.conversationId}/ack`, {
+                            messageId: evt.message.id,
+                        }).catch(() => {})
                     }
                 }
             }

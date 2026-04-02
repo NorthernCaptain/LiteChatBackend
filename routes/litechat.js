@@ -22,6 +22,7 @@ const {
     sendMessageToConversation,
     getConversationMessages,
     pollForEvents,
+    broadcastTyping,
 } = require("../services/messageService")
 const {
     uploadAttachment,
@@ -327,6 +328,22 @@ function router(app) {
 
             const result = await removeReaction(messageId, userId, emoji)
             res.json(result)
+        })
+    )
+
+    // --- Typing ---
+
+    r.post(
+        "/conversations/:id/typing",
+        asyncHandler(async (req, res) => {
+            const userId = req.user.user_id
+            const conversationId = req.params.id
+            await requireMembership(conversationId, userId)
+            const { typing } = req.body
+            const user = await dbGetUser(userId)
+            const userName = (user && user.name) || "Unknown"
+            await broadcastTyping(conversationId, userId, userName, typing !== false)
+            res.json({ success: true })
         })
     )
 

@@ -70,7 +70,7 @@ const dbDeleteAcknowledgedEvents = async (userId, afterId) => {
 
 const dbFetchPendingEvents = async (userId, limit) => {
     const [rows] = await pool.query(
-        `SELECT pe.id AS pending_id, pe.type, pe.conversation_id, pe.message_id, pe.reaction_id
+        `SELECT pe.id AS pending_id, pe.type, pe.conversation_id, pe.message_id, pe.reaction_id, pe.meta
          FROM pending_events pe
          WHERE pe.user_id = ?
          ORDER BY pe.id ASC
@@ -147,6 +147,30 @@ const dbSendMessageTx = async (conversationId, senderId, text, referenceMessageI
     }
 }
 
+async function dbDeleteTypingEvents(conversationId, userId) {
+    await pool.query(
+        "DELETE FROM pending_events WHERE type = 'typing' AND conversation_id = ? AND JSON_EXTRACT(meta, '$.userId') = ?",
+        [conversationId, userId]
+    )
+}
+
+async function dbDeleteTypingEventsForUser(userId) {
+    await pool.query(
+        "DELETE FROM pending_events WHERE type = 'typing' AND user_id = ?",
+        [userId]
+    )
+}
+
+async function dbInsertTypingEvents(conversationId, meta, recipientIds) {
+    if (recipientIds.length === 0) return
+    const metaJson = JSON.stringify(meta)
+    const values = recipientIds.map((uid) => [uid, "typing", conversationId, metaJson])
+    await pool.query(
+        "INSERT INTO pending_events (user_id, type, conversation_id, meta) VALUES ?",
+        [values]
+    )
+}
+
 async function dbCheckPendingEvent(messageId, userId) {
     const [rows] = await pool.query(
         "SELECT 1 FROM pending_events WHERE message_id = ? AND user_id = ? LIMIT 1",
@@ -166,4 +190,7 @@ module.exports = {
     dbGetMessagesByIds,
     dbSendMessageTx,
     dbCheckPendingEvent,
+    dbDeleteTypingEvents,
+    dbDeleteTypingEventsForUser,
+    dbInsertTypingEvents,
 }

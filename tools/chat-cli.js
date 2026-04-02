@@ -365,6 +365,14 @@ async function cmdReact(messageId, emoji) {
     )
 }
 
+async function cmdTyping(convId, onOff) {
+    const typing = onOff !== "off"
+    await api("POST", `/conversations/${convId}/typing`, { typing })
+    console.log(
+        `${C.green}  Typing ${typing ? "ON" : "OFF"} in conversation #${convId}${C.reset}`
+    )
+}
+
 function cmdHelp() {
     console.log(`
 ${C.bold}Commands:${C.reset}
@@ -378,6 +386,7 @@ ${C.bold}Commands:${C.reset}
   /upload <filepath>              Upload file, get attachment ID
   /sendfile <convId> <filepath>   Upload + send in one step
   /react <msgId> <emoji>          Add reaction to a message
+  /type <convId> [on|off]         Send typing indicator (default: on)
   /help                           Show this help
   /quit                           Exit
 `)
@@ -505,6 +514,20 @@ async function handleCommand(line) {
                 break
             }
 
+            case "type":
+            case "typing": {
+                const convId = parts[1]
+                const onOff = (parts[2] || "on").toLowerCase()
+                if (!convId) {
+                    console.log(
+                        `${C.red}  Usage: /type <convId> [on|off]${C.reset}`
+                    )
+                    break
+                }
+                await cmdTyping(convId, onOff)
+                break
+            }
+
             case "help":
                 cmdHelp()
                 break
@@ -549,6 +572,12 @@ function displayEvent(evt) {
         const r = evt.reaction
         printAbove(
             `${C.yellow}\u2190 [conv:${convId}] ${userName(r.userId)} reacted ${r.emoji} on msg #${r.messageId}${C.reset}`
+        )
+    } else if (evt.type === "typing" && evt.meta) {
+        const name = evt.meta.name || `user#${evt.meta.userId}`
+        const state = evt.meta.active ? "typing" : "stopped typing"
+        printAbove(
+            `${C.magenta}\u2190 [conv:${convId}] ${name} ${state}${C.reset}`
         )
     } else {
         printAbove(

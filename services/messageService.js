@@ -18,6 +18,9 @@ const {
     dbGetMessagesByIds,
     dbSendMessageTx,
     dbCheckPendingEvent,
+    dbDeleteTypingEvents,
+    dbDeleteTypingEventsForUser,
+    dbInsertTypingEvents,
 } = require("../db/messages")
 const fcmService = require("./fcmService")
 const { dbGetUser } = require("../db/users")
@@ -223,6 +226,12 @@ async function buildEventResponse(userId) {
         } else if (row.type === "reaction" && row.reaction_id) {
             event.reaction =
                 reactionMap.get(row.reaction_id.toString()) || null
+        } else if (row.type === "typing" && row.meta) {
+            try {
+                event.meta = typeof row.meta === "string" ? JSON.parse(row.meta) : row.meta
+            } catch (_) {
+                event.meta = {}
+            }
         }
         events.push(event)
     }
@@ -331,6 +340,8 @@ async function sendMessageToConversation(
             try {
                 const pending = await dbCheckPendingEvent(messageId, uid)
                 if (pending) {
+                    // User is not active — clean up stale typing events
+                    await dbDeleteTypingEventsForUser(uid)
                     await fcmService.sendNotification(uid, {
                         title: senderName,
                         body: bodyText,
@@ -405,6 +416,25 @@ function getPendingPollCount() {
     return pendingPolls.size
 }
 
+async function broadcastTyping(conversationId, userId, userName, isTyping) {
+    const members = await dbGetConversationMembers(conversationId)
+    const recipientIds = members
+        .filter((m) => m.userId !== userId)
+        .map((m) => m.userId)
+
+    // Remove old typing events for this user/conversation
+    await dbDeleteTypingEvents(conversationId, userId)
+
+    // Insert new typing events
+    const meta = { userId, name: userName, active: isTyping }
+    await dbInsertTypingEvents(conversationId, meta, recipientIds)
+
+    // Wake recipients' polls
+    for (const uid of recipientIds) {
+        publishToUser(uid)
+    }
+}
+
 function clearPendingPolls() {
     for (const [, pollData] of pendingPolls) {
         clearTimeout(pollData.timer)
@@ -424,4 +454,5 @@ module.exports = {
     clearPendingPolls,
     handleWake,
     handleCancel,
+    broadcastTyping,
 }

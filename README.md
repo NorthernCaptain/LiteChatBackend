@@ -42,7 +42,8 @@ LiteChatBackend/
 │   ├── 005_reactions.sql
 │   ├── 006_pending_events.sql
 │   ├── 007_authdb_chat_access.sql
-│   └── 008-fcm-tokens.sql
+│   ├── 008-fcm-tokens.sql
+│   └── 009-typing-events.sql
 └── storage/                    # gitignored
     ├── originals/
     ├── thumbnails/
@@ -121,10 +122,11 @@ CREATE TABLE reactions (
 CREATE TABLE pending_events (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
-    type ENUM('message','reaction') NOT NULL DEFAULT 'message',
+    type ENUM('message','reaction','typing') NOT NULL DEFAULT 'message',
     conversation_id BIGINT UNSIGNED NOT NULL,
     message_id BIGINT UNSIGNED DEFAULT NULL,
     reaction_id BIGINT UNSIGNED DEFAULT NULL,
+    meta JSON DEFAULT NULL,
     created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
     KEY idx_user_pending (user_id, id)
 );
@@ -142,7 +144,7 @@ CREATE TABLE fcm_tokens (
 );
 ```
 
-Extensible: new event types can be added to the ENUM and a corresponding `*_id` column added. The `type` column tells the client which payload to expect in the poll response.
+Extensible: new event types can be added to the ENUM. The `meta` JSON column carries arbitrary metadata for any event type. The `type` column tells the client which payload to expect in the poll response.
 
 ## Data Models
 
@@ -229,13 +231,14 @@ Note: `serverFilename` and `thumbnailFilename` are internal, not exposed to clie
 ```
 {
     "pendingId": "26",          // BIGINT as string - pending_events.id
-    "type": "message",          // "message" | "reaction" | future types
+    "type": "message",          // "message" | "reaction" | "typing"
     "conversationId": "1",
     "message": Message,         // full Message object (for type "message")
     "reaction": Reaction,       // Reaction object (for type "reaction", includes messageId)
+    "meta": Object              // arbitrary JSON (for type "typing" and future types)
 }
 ```
-Only the field matching `type` is present. This allows future event types without schema changes.
+Only the field matching `type` is present. The `meta` field carries extensible JSON metadata — for typing events: `{ "userId": 10, "name": "Leo", "active": true }`.
 
 ---
 
@@ -761,6 +764,41 @@ Unregister an FCM token (on logout).
 
 ---
 
+### POST /conversations/:id/typing
+
+Send a typing indicator to other members of a conversation.
+
+**Path parameters:**
+- `id` (string) - Conversation ID
+
+**Request body:**
+```json
+{
+    "typing": true
+}
+```
+
+**Parameters:**
+- `typing` (boolean): `true` when user starts typing, `false` when they stop
+
+**Behavior:**
+- Deletes any existing typing events for this user/conversation (prevents stacking)
+- Inserts `pending_events` rows (type: `typing`) with `meta` JSON for each conversation member (excluding sender)
+- Wakes recipients' polls via `publishToUser()`
+- Meta payload: `{ "userId": 10, "name": "Leo", "active": true }`
+
+**Response (200):**
+```json
+{
+    "success": true
+}
+```
+
+**Errors:**
+- 403: User not a member of the conversation
+
+---
+
 ### POST /poll
 
 Long-poll for new messages/events across ALL user's conversations.
@@ -911,7 +949,7 @@ ALTER TABLE users ADD COLUMN avatar VARCHAR(255) DEFAULT NULL;
 3. Run `sql/007_authdb_chat_access.sql` against the LinesBackend authdb
 4. Set `chat_access = 1` for users who should have chat access
 5. `npm install` in this directory
-6. Run `sql/008-fcm-tokens.sql` against the litechat database
+6. Run `sql/008-fcm-tokens.sql` and `sql/009-typing-events.sql` against the litechat database
 7. (Optional) For push notifications: set `LC_FCM_SERVICE_ACCOUNT_PATH` to the Firebase service account JSON file path
 8. Start LinesBackend - module loads at `/litechat/api/v1`
 
